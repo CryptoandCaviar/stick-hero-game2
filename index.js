@@ -1,11 +1,11 @@
-// Game state
+// === GAME STATE ===
 let phase = "waiting";
 let lastTimestamp;
 let heroX, heroY, sceneOffset;
 let platforms = [], sticks = [];
 let score = 0;
 
-// Config
+// === CONFIG ===
 const canvasWidth = 375;
 const canvasHeight = 375;
 const platformHeight = 100;
@@ -15,16 +15,48 @@ const walkingSpeed = 4;
 const transitioningSpeed = 2;
 const fallingSpeed = 2;
 
-// Elements
+// === ELEMENTS ===
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const scoreElement = document.getElementById("score");
 const restartButton = document.getElementById("restart");
+const soundToggle = document.getElementById("sound-toggle");
 
-// Start
+// === SOUND SYSTEM ===
+let soundEnabled = true;
+const sounds = {};
+
+function loadSound(name, src) {
+  const audio = new Audio(src);
+  audio.preload = "auto";
+  sounds[name] = audio;
+}
+
+function playSound(name) {
+  if (!soundEnabled) return;
+  const sound = sounds[name];
+  if (sound) {
+    sound.currentTime = 0;
+    sound.play().catch(() => {});
+  }
+}
+
+// Load all sounds
+loadSound("stretch", "stretch.mp3");
+loadSound("drop", "drop.mp3");
+loadSound("walk", "walk.mp3");
+loadSound("fall", "fall.mp3");
+
+// Sound toggle
+soundToggle.addEventListener("click", () => {
+  soundEnabled = !soundEnabled;
+  soundToggle.textContent = soundEnabled ? "Sound On" : "Sound Off";
+  soundToggle.classList.toggle("muted", !soundEnabled);
+});
+
+// === START GAME ===
 resetGame();
 
-// Reset game
 function resetGame() {
   phase = "waiting";
   lastTimestamp = undefined;
@@ -40,7 +72,7 @@ function resetGame() {
   draw();
 }
 
-// Draw everything
+// === DRAW ===
 function draw() {
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
   ctx.save();
@@ -84,23 +116,24 @@ function drawSticks() {
   });
 }
 
-// Input
-let isPressing = false;
-
+// === INPUT ===
 canvas.addEventListener("mousedown", () => { if (phase === "waiting") startStretch(); });
-canvas.addEventListener("mouseup", () => { if (phase === "stretching") phase = "turning"; });
+canvas.addEventListener("mouseup", () => { if (phase === "stretching") { phase = "turning"; playSound("drop"); } });
 canvas.addEventListener("touchstart", e => { e.preventDefault(); if (phase === "waiting") startStretch(); });
-canvas.addEventListener("touchend", e => { e.preventDefault(); if (phase === "stretching") phase = "turning"; });
+canvas.addEventListener("touchend", e => { e.preventDefault(); if (phase === "stretching") { phase = "turning"; playSound("drop"); } });
 
 function startStretch() {
   phase = "stretching";
   lastTimestamp = undefined;
+  playSound("stretch");
   requestAnimationFrame(animate);
 }
 
 restartButton.addEventListener("click", resetGame);
 
-// Animation loop
+// === ANIMATION LOOP ===
+let wasWalking = false;
+
 function animate(timestamp) {
   if (!lastTimestamp) { lastTimestamp = timestamp; requestAnimationFrame(animate); return; }
   const delta = timestamp - lastTimestamp;
@@ -110,6 +143,7 @@ function animate(timestamp) {
     case "stretching":
       sticks[sticks.length - 1].length += delta / stretchingSpeed;
       break;
+
     case "turning":
       sticks[sticks.length - 1].rotation += delta / turningSpeed;
       if (sticks[sticks.length - 1].rotation >= 90) {
@@ -119,17 +153,23 @@ function animate(timestamp) {
         phase = "walking";
       }
       break;
+
     case "walking":
       heroX += delta / walkingSpeed;
+      if (!wasWalking) {
+        playSound("walk");
+        wasWalking = true;
+      }
       const hitWalk = thePlatformTheStickHits();
       if (hitWalk) {
         const maxX = hitWalk.x + hitWalk.w - 30;
-        if (heroX > maxX) { heroX = maxX; phase = "transitioning"; }
+        if (heroX > maxX) { heroX = maxX; phase = "transitioning"; wasWalking = false; }
       } else {
         const maxX = sticks[sticks.length - 1].x + sticks[sticks.length - 1].length;
-        if (heroX > maxX) { heroX = maxX; phase = "falling"; }
+        if (heroX > maxX) { heroX = maxX; phase = "falling"; wasWalking = false; }
       }
       break;
+
     case "transitioning":
       sceneOffset += delta / transitioningSpeed;
       const next = thePlatformTheStickHits();
@@ -138,8 +178,10 @@ function animate(timestamp) {
         phase = "waiting";
       }
       break;
+
     case "falling":
       heroY += delta / fallingSpeed;
+      playSound("fall");
       if (sticks[sticks.length - 1].rotation < 180)
         sticks[sticks.length - 1].rotation += delta / turningSpeed;
       if (heroY > platformHeight + 100) {
@@ -153,7 +195,7 @@ function animate(timestamp) {
   if (phase !== "waiting") requestAnimationFrame(animate);
 }
 
-// Generate platform
+// === UTILS ===
 function generatePlatform() {
   const last = platforms[platforms.length - 1];
   const minGap = 40, maxGap = 200;
@@ -163,7 +205,6 @@ function generatePlatform() {
   platforms.push({ x, w });
 }
 
-// Check stick hit
 function thePlatformTheStickHits() {
   const stick = sticks[sticks.length - 1];
   const farX = stick.x + stick.length;
